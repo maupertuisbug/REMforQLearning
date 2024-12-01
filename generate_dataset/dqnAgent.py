@@ -65,9 +65,9 @@ class DQNAgent:
         torch.manual_seed(self.seed)
         self.envs = gym.vector.SyncVectorEnv([make_env(self.env_id, self.seed, i, self.capture_video) for i in range(self.num_envs)])
         
-        q_network = QNetwork(self.envs).to(self.device)
-        optimizer = optim.Adam(q_network.parameters(), lr=self.learning_rate)
-        target_network = QNetwork(self.envs).to(self.device)
+        self.q_network = QNetwork(self.envs).to(self.device)
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
+        self.target_network = QNetwork(self.envs).to(self.device)
         
 
         self.replay_buffer = ReplayBuffer(
@@ -79,7 +79,7 @@ class DQNAgent:
             handle_timeout_termination = False
         )
     
-    def train(self):
+    def train(self, wandb_run):
 
         obs, _ = self.envs.reset(seed=self.seed)
 
@@ -90,9 +90,9 @@ class DQNAgent:
             epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction*self.total_timesteps, step)
 
             if random.random() < epsilon:
-                actions = np.array([self.envs.single_action_space.sample()] for _ in range(self.num_envs))
+                actions = self.envs.action_space.sample()
             else :
-                q_values = q_network(torch.tensor(obs, device=self.device))
+                q_values = self.q_network(torch.tensor(obs, device=self.device))
                 actions = torch.argmax(q_values, dim=1).cpu().numpy()
             
             next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
@@ -103,20 +103,20 @@ class DQNAgent:
                 if d :
                     _next_obs[idx] = info["final_observation"][idx]
             
-            replay_buffer.add(obs, _next_obs, actions, rewards, terminated, infos)
+            self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
 
             obs = _next_obs
             total_reward = total_reward + rewards
 
-            if step > step_learning_start :
-                if step%training_frequency == 0:
-                    data = replay_buffer.sample(self.batch_size)
+            if step > self.step_start_learning :
+                if step% self.training_frequency == 0:
+                    data = self.replay_buffer.sample(self.batch_size)
                     with torch.no_grad():
-                        target_max, _ = target_network(data.next_observations).max(dim=1)
+                        target_max, _ = self.target_network(data.next_observations).max(dim=1)
                         td_target = data.rewards.flatten() + self.gamma * target_max * (1 - data.dones.flatten())
 
-                    current_value = q_network(data.observations).gather(1, data.actions).squeeze()
-                    loss = F.mse_loss(td_target, current_value)
+                    current_value = self.q_network(data.observations).gather(1, data.actions).squeeze()
+                    loss = torch.nn.F.mse_loss(td_target, current_value)
 
 
                     if step%100 == 0:
@@ -125,12 +125,12 @@ class DQNAgent:
                         """
                         wandb_run.log({"total_reward" : total_reward}, step = step)
                     
-                    optimizer.zero_grad()
+                    self.optimizer.zero_grad()
                     loss.backward()
-                    optimizer.step()
+                    self.optimizer.step()
 
-                if step % target_network_frequency == 0:
-                    for target_network_param, q_network_param in zip(target_network.parameters(), q_network.parameters()):
+                if step % self.target_network_frequency == 0:
+                    for target_network_param, q_network_param in zip(self.target_network.parameters(), self.q_network.parameters()):
                         target_network_param.data.copy_(
                             self.tau * q_network_param.data + (1.0 - self.tau)*target_network_param.data
                         )
@@ -143,7 +143,7 @@ def run_exp():
     config = wandb.config
     agent = DQNAgent(config)
     agent.reset()
-    agent.train()
+    agent.train(wandb_run)
 
 
 if __name__ == "__main__":

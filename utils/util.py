@@ -12,7 +12,7 @@ from stable_baselines3.common.atari_wrappers import(
 
 def make_env(env_id, seed, idx, capture_video):
 
-    def _env():
+    def callable_env():
 
         if capture_video and idx == 0:
             env = gym.make(env_id, render_mode="rgb_array")
@@ -35,7 +35,7 @@ def make_env(env_id, seed, idx, capture_video):
 
         return env 
     
-    return _env
+    return callable_env
 
 
 def epsilon_schedule(epsilon_a, epsilon_b, duration, t):
