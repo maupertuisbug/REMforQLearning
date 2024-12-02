@@ -20,22 +20,30 @@ class QNetwork(torch.nn.Module):
         
         super(QNetwork, self).__init__()
 
-        self.network = torch.nn.Sequential(
-            torch.nn.Conv2d(4, 32, 8, stride=4),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(32, 64, 4, stride=2),
-            torch.nn.ReLU(), 
-            torch.nn.Conv2d(64, 64, 3, stride=1),
-            torch.nn.ReLU(),
-            torch.nn.Flatten(), 
-            torch.nn.Linear(3136, 512),
-            torch.nn.ReLU(), 
-            torch.nn.Linear(512, env.single_action_space.n),)
+
+        self.conv1 = torch.nn.Conv2d(1, 32, 8, stride=4)
+        self.conv2 = torch.nn.Conv2d(32, 64, 4, stride=2)
+        self.conv3 = torch.nn.Conv2d(64, 64, 3, stride=1)
+        self.f1    = torch.nn.Linear(3136, 512)
+        self.f2    = torch.nn.Linear(512, env.single_action_space.n)
+        self.activation = torch.nn.ReLU()
+        self.flatten = torch.nn.Flatten(start_dim=1)  # This does not include the batch dim
 
     
     def forward(self, x):
-
-        return self.network(x / 255.0)
+        input = x/255.0
+        output = self.conv1(input)
+        output = self.activation(output)
+        output = self.conv2(output)
+        output = self.activation(output)
+        output = self.conv3(output)
+        output = self.activation(output)
+        output = self.flatten(output)
+        output = self.activation(output).unsqueeze(0)
+        output = self.f1(output)
+        output = self.activation(output)
+        output = self.f2(output)
+        return output
     
 
 class DQNAgent:
@@ -55,7 +63,9 @@ class DQNAgent:
         self.capture_video = config.capture_video
         self.total_timesteps = config.total_timesteps
         self.step_start_learning = config.step_start_learning
+        self.training_frequency = config.training_frequency
         self.num_envs = config.num_envs
+        self.target_network_frequency = config.target_network_frequency
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def reset(self):
@@ -68,6 +78,8 @@ class DQNAgent:
         self.q_network = QNetwork(self.envs).to(self.device)
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
         self.target_network = QNetwork(self.envs).to(self.device)
+
+        ac = self.envs.single_action_space.n
         
 
         self.replay_buffer = ReplayBuffer(
@@ -92,7 +104,7 @@ class DQNAgent:
             if random.random() < epsilon:
                 actions = self.envs.action_space.sample()
             else :
-                q_values = self.q_network(torch.tensor(obs, device=self.device))
+                q_values = self.q_network(torch.tensor(obs.unsqueeze(0), device=self.device))
                 actions = torch.argmax(q_values, dim=1).cpu().numpy()
             
             next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
@@ -112,7 +124,8 @@ class DQNAgent:
                 if step% self.training_frequency == 0:
                     data = self.replay_buffer.sample(self.batch_size)
                     with torch.no_grad():
-                        target_max, _ = self.target_network(data.next_observations).max(dim=1)
+                        target_output = self.target_network(data.next_observations.unsqueeze(1))
+                        target_max, _ = self.target_network(data.next_observations).max(dim=2)
                         td_target = data.rewards.flatten() + self.gamma * target_max * (1 - data.dones.flatten())
 
                     current_value = self.q_network(data.observations).gather(1, data.actions).squeeze()

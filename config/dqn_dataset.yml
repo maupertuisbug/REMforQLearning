@@ -20,7 +20,7 @@ parameters :
   tau :
     values : [0.9]
   target_network_frequency :
-    values : [1000]
+    values : [10]
   batch_size :
     values : [32]
   epsilon_a :
@@ -30,9 +30,9 @@ parameters :
   exploration_fraction :
     values : [0.10]
   step_start_learning :
-    values : [80000]
-  train_frequency :
-    values : [4]
+    values : [10]
+  training_frequency :
+    values : [5]
   seed :
     values : [43]
   
