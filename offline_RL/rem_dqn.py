@@ -8,6 +8,7 @@ import wandb
 from replay_buffer.fixed_replay_buffer import FixedReplayBuffer
 from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.save_util import load_from_pkl
+from utils.util import make_env, epsilon_schedule
 import ale_py 
 import torch.optim as optim 
 from utils.util import make_env
@@ -79,6 +80,7 @@ class REMAgent :
         self.num_envs = config.num_envs 
         self.tau = config.tau 
         self.epochs = config.epochs
+        self.evaluation_epochs = config.evaluation_epochs
         self.target_network_frequency = config.target_network_frequency 
         self.k = config.k
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,12 +99,13 @@ class REMAgent :
         self.optimizers = []
 
         for k in range(self.k):
-            self.q_networks.append(QNetwork(self.envs, device=self.device))
-            self.target_networks.append(QNetwork(self.envs, device=self.device))
+            self.q_networks.append(QNetwork(self.envs).to(self.device))
+            self.target_networks.append(QNetwork(self.envs).to(self.device))
             self.optimizers.append(optim.Adam(self.q_networks[-1].parameters(), lr=self.learning_rate))
 
         ac = self.envs.single_action_space.n 
 
+        # --- Setup Replay Buffer and Load Offline Data --- #
         self.replay_buffer = ReplayBuffer(
             self.buffer_size, 
             self.envs.single_observation_space, 
@@ -112,17 +115,18 @@ class REMAgent :
             handle_timeout_termination = False
         )
 
-        file_path = "offline_data/"
-        self.replay_buffer = load_from_pkl(file_path, self.verbose)
+        file_path = "offline_data/offline_data"
+        self.replay_buffer = load_from_pkl(file_path)
+        print(self.replay_buffer.pos)
 
     
-    def train_rem(self, wandb_run):
+    def train_rem(self):
 
         for epoch in range(self.epochs):
             total_loss = 0
 
             data = self.replay_buffer.sample(self.batch_size)
-            probabilities = np.random.dirichlet(alpha=np.ones(5), size=1)[0]
+            probabilities = np.random.dirichlet(alpha=np.ones(self.k), size=1)[0]
             td_target = 0
             current_value = 0
             for k in range(self.k):
@@ -135,7 +139,7 @@ class REMAgent :
                 td_target = td_target + data.rewards.flatten() + probabilities[k] * (self.gamma * target_max * (1 - data.dones.flatten()))
 
                 current_value_ = q_network(data.observations).squeeze(0)
-                current_value = current_value + probabilities[k] * current_value_.gather(1, data.actions).squeeze().unsqueeze(0)
+                current_value = current_value + probabilities[k] * (current_value_.gather(1, data.actions).squeeze().unsqueeze(0))
                     
             loss = torch.nn.functional.mse_loss(td_target, current_value)
 
@@ -150,29 +154,74 @@ class REMAgent :
 
             if epoch % self.target_network_frequency == 0:
 
-                for k in self.k : 
+                for k in range(self.k) : 
                     for target_network_param, q_network_param in zip(self.target_networks[k].parameters(), self.q_networks[k].parameters()):
                         target_network_param.data.copy_(
                             self.tau * q_network_param.data + (1.0 - self.tau)*target_network_param.data
                         )
 
+    def evaluate(self, wandb_run):
+
+        step = 0
+        episode = 0
+        episode_reward = []
+        episode_length = []
+        for epoch in range(self.evaluation_epochs):
+            total_reward = 0
+            obs, _ = self.envs.reset(seed=self.seed)
+            ep_length = 0 
+            
+            while True :
+                step = step + 1
+                ep_length = ep_length + 1 
+                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction * self.total_timesteps, step)
+                probabilities = np.random.dirichlet(alpha=np.ones(self.k), size=1)[0]
+                if random.random() < epsilon :
+                    actions = self.envs.action_space.sample()
+                else :
+                    q_values = 0
+                    for k in range(self.k):
+                        q_network = self.q_networks[k]
+                        q_values_ = q_network(torch.tensor(obs, device=self.device)).squeeze(0)
+                        q_values  = q_values + probabilities[k]*q_values_
+                    
+                    actions = torch.argmax(q_values, dim=1).cpu().numpy()
+                
+                next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
+                # --- To do -- Does new experience help? -- #
+                _next_obs = next_obs.copy()
+                obs = _next_obs
+                total_reward = total_reward + rewards
+
+                if terminated:
+                    episode += 1
+                    episode_length.append(ep_length)
+                    episode_reward.append(total_reward)
+                    break
+            
+            if epoch % 100 == 0:
+                wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(epoch/100))
+                wandb_run.log({"Average Episode Length" : np.mean(episode_length)}, step = int(epoch/100))
+                episode_reward = []
+                episode_length = []
+
 
 def run_exp():
 
     wandb_run = wandb.init(
-        project="test_rem_dqn"
+        project="REM_DQN"
     )
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config = wandb.config
     agent = REMAgent(config)
     agent.reset()
-    agent.train(wandb_run)
+    agent.train_rem()
+    agent.evaluate(wandb_run)
 
 
 if __name__ == "__main__":
-    """
-    Parse the config file
-    """
+   
+    # --- Parse the config files --- #
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-config")
@@ -180,11 +229,9 @@ if __name__ == "__main__":
     config = OmegaConf.load(args.config)
     config_dict = OmegaConf.to_container(config, resolve=True )
 
-    """
-    Create the wandb run
-    """
+    # --- Create Wandb Sweep --- #
 
-    project_name = "test_rem_dqn"
+    project_name = "REM_DQN"
     sweep_id = wandb.sweep(sweep=config_dict, project=project_name)
     agent = wandb.agent(sweep_id, function=run_exp, count=1)
         

@@ -84,6 +84,7 @@ class DQNAgent:
         self.training_frequency = config.training_frequency
         self.num_envs = config.num_envs
         self.tau = config.tau
+        self.epochs = config.epochs
         self.target_network_frequency = config.target_network_frequency
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -113,44 +114,52 @@ class DQNAgent:
     def train(self, wandb_run):
 
         obs, _ = self.envs.reset(seed=self.seed)
-
         total_reward = 0
         episode_reward = []
+        episode_length = []
         episode = 0
+        step = 0
+        for epoch in range(self.epochs):
+            total_reward = 0
+            ep_length = 0
+            while True :
+                step = step + 1
+                ep_length = ep_length + 1
+                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction*self.total_timesteps, step)
 
-        for step in range(self.total_timesteps):
-
-            epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction*self.total_timesteps, step)
-
-            if random.random() < epsilon:
-                actions = self.envs.action_space.sample()
-            else :
-                q_values = self.q_network(torch.tensor(obs, device=self.device)).squeeze(0)
-                actions = torch.argmax(q_values, dim=1).cpu().numpy()
+                if random.random() < epsilon:
+                    actions = self.envs.action_space.sample()
+                else :
+                    q_values = self.q_network(torch.tensor(obs, device=self.device)).squeeze(0)
+                    actions = torch.argmax(q_values, dim=1).cpu().numpy()
             
-            next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
+                next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
 
-            _next_obs = next_obs.copy()
+                _next_obs = next_obs.copy()
 
-            for idx, d in enumerate(truncated):
-                if d :
-                    _next_obs[idx] = info["final_observation"][idx]
+                for idx, d in enumerate(truncated):
+                    if d :
+                        _next_obs[idx] = info["final_observation"][idx]
             
-            self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
+                self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
 
-            obs = _next_obs
-            total_reward = total_reward + rewards
+                obs = _next_obs
+                total_reward = total_reward + rewards
 
-            if terminated:
-                episode += 1
-                episode_reward.append(total_reward)
-                total_reward = 0
-                if episode % 100 == 0:
-                    wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(episode/100))
-                    episode_reward = []
+                if terminated:
+                    episode += 1
+                    episode_length.append(ep_length)
+                    episode_reward.append(total_reward)
+                    break
+            
+            if epoch % 5000 == 0:
+                wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(epoch/5000))
+                wandb_run.log({"Average Episode Length" : np.mean(episode_length)}, step = int(epoch/5000))
+                episode_reward = []
+                episode_length = []
                 
             if step > self.step_start_learning :
-                if step% self.training_frequency == 0:
+                if epoch % self.training_frequency == 0:
                     data = self.replay_buffer.sample(self.batch_size)
                     with torch.no_grad():
                         target_output = self.target_network(data.next_observations)
@@ -165,24 +174,25 @@ class DQNAgent:
                     loss.backward()
                     self.optimizer.step()
 
-                if step % self.target_network_frequency == 0:
+                if epoch % self.target_network_frequency == 0:
                     for target_network_param, q_network_param in zip(self.target_network.parameters(), self.q_network.parameters()):
                         target_network_param.data.copy_(
                             self.tau * q_network_param.data + (1.0 - self.tau)*target_network_param.data
                         )
         
-        self.save_buffer()
-        self.replay_buffer = self.load_buffer()
+        self.save_buffer(self.seed)
+        
+        # self.replay_buffer = self.load_buffer()
 
             
-    def save_buffer(self):
-
-        file_path = "offline_data/offline_data"
+    def save_buffer(self, seed):
+ 
+        file_path =  f"offline_data/offline_data_{seed}"
         save_to_pkl(file_path, self.replay_buffer)
 
     def load_buffer(self):
 
-        file_path = "offline_data/offline_data"
+        file_path = "offline_data/offline_data1"
         replay_buffer = load_from_pkl(file_path)
         return replay_buffer
 
@@ -192,7 +202,7 @@ class DQNAgent:
 def run_exp():
 
     wandb_run = wandb.init(
-        project="test_dqn"
+        project="DQN"
     )
 
     config = wandb.config
@@ -216,9 +226,9 @@ if __name__ == "__main__":
     Create the wandb run
     """
 
-    project_name = "test_dqn"
+    project_name = "DQN"
     sweep_id = wandb.sweep(sweep=config_dict, project=project_name)
-    agent = wandb.agent(sweep_id, function=run_exp, count=1)
+    agent = wandb.agent(sweep_id, function=run_exp, count=5)
 
 
 

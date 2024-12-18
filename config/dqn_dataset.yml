@@ -5,6 +5,8 @@ metric:
 parameters :
   gamma:
     values : [0.99]
+  epochs :
+    values : [1000000]
   env_id:
     values : ["BreakoutNoFrameskip-v4"]
   capture_video :
@@ -12,7 +14,7 @@ parameters :
   total_timesteps :
     values : [50000000]
   learning_rate :
-    values : [0.001]
+    values : [0.00025]
   num_envs :
     values : [1]
   buffer_size :
@@ -20,19 +22,19 @@ parameters :
   tau :
     values : [0.9]
   target_network_frequency :
-    values : [500]
+    values : [5000]
   batch_size :
-    values : [32, 64]
+    values : [256]
   epsilon_a :
     values : [1.0]
   epsilon_b :
-    values : [0.01]
+    values : [0.1]
   exploration_fraction :
     values : [0.10]
   step_start_learning :
-    values : [100]
+    values : [10000]
   training_frequency :
-    values : [4]
+    values : [2]
   seed :
-    values : [43]
+    values : [56, 89, 988, 10, 23]
   

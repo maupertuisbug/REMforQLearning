@@ -39,5 +39,8 @@ def make_env(env_id, seed, idx, capture_video):
 
 
 def epsilon_schedule(epsilon_a, epsilon_b, duration, t):
-    slope = (epsilon_b - epsilon_a)/duration
-    return max(slope*t + epsilon_a, epsilon_b)
+    if t < 1000000:
+        slope = (epsilon_b - epsilon_a)/duration
+        return max(slope*t + epsilon_a, epsilon_b)
+    else :
+        return 0.1
