@@ -36,5 +36,5 @@ parameters :
   training_frequency :
     values : [2]
   seed :
-    values : [56, 89, 988, 10, 23]
+    values : [988, 10, 23]
   

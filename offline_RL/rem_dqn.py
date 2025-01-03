@@ -115,9 +115,8 @@ class REMAgent :
             handle_timeout_termination = False
         )
 
-        file_path = "offline_data/offline_data"
+        file_path = "offline_data/offline_data_56"
         self.replay_buffer = load_from_pkl(file_path)
-        print(self.replay_buffer.pos)
 
     
     def train_rem(self):
