@@ -113,86 +113,87 @@ class DQNAgent:
     
     def train(self, wandb_run):
 
-        obs, _ = self.envs.reset(seed=self.seed)
-        total_reward = 0
-        episode_reward = []
-        episode_length = []
-        episode = 0
-        step = 0
-        for epoch in range(self.epochs):
+        for seed in [34, 43, 56, 78]:
+            obs, _ = self.envs.reset(seed=seed)
             total_reward = 0
-            ep_length = 0
-            while True :
-                step = step + 1
-                ep_length = ep_length + 1
-                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction*self.total_timesteps, step)
+            episode_reward = []
+            episode_length = []
+            episode = 0
+            step = 0
+            for epoch in range(self.epochs):
+                total_reward = 0
+                ep_length = 0
+                while True :
+                    step = step + 1
+                    ep_length = ep_length + 1
+                    epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction*self.total_timesteps, step)
 
-                if random.random() < epsilon:
-                    actions = self.envs.action_space.sample()
-                else :
-                    q_values = self.q_network(torch.tensor(obs, device=self.device)).squeeze(0)
-                    actions = torch.argmax(q_values, dim=1).cpu().numpy()
-            
-                next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
-
-                _next_obs = next_obs.copy()
-
-                for idx, d in enumerate(truncated):
-                    if d :
-                        _next_obs[idx] = info["final_observation"][idx]
-            
-                self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
-
-                obs = _next_obs
-                total_reward = total_reward + rewards
-
-                if terminated:
-                    episode += 1
-                    episode_length.append(ep_length)
-                    episode_reward.append(total_reward)
-                    break
-            
-            if epoch % 5000 == 0:
-                wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(epoch/5000))
-                wandb_run.log({"Average Episode Length" : np.mean(episode_length)}, step = int(epoch/5000))
-                episode_reward = []
-                episode_length = []
+                    if random.random() < epsilon:
+                        actions = self.envs.action_space.sample()
+                    else :
+                        q_values = self.q_network(torch.tensor(obs, device=self.device)).squeeze(0)
+                        actions = torch.argmax(q_values, dim=1).cpu().numpy()
                 
-            if step > self.step_start_learning :
-                if epoch % self.training_frequency == 0:
-                    data = self.replay_buffer.sample(self.batch_size)
-                    with torch.no_grad():
-                        target_output = self.target_network(data.next_observations)
-                        target_max, _ = self.target_network(data.next_observations).max(dim=2)
-                        td_target = data.rewards.flatten() + self.gamma * target_max * (1 - data.dones.flatten())
+                    next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
 
-                    current_value = self.q_network(data.observations).squeeze(0)
-                    current_value = current_value.gather(1, data.actions).squeeze().unsqueeze(0)
-                    loss = torch.nn.functional.mse_loss(td_target, current_value)
+                    _next_obs = next_obs.copy()
 
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+                    for idx, d in enumerate(truncated):
+                        if d :
+                            _next_obs[idx] = info["final_observation"][idx]
+                
+                    self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
 
-                if epoch % self.target_network_frequency == 0:
-                    for target_network_param, q_network_param in zip(self.target_network.parameters(), self.q_network.parameters()):
-                        target_network_param.data.copy_(
-                            self.tau * q_network_param.data + (1.0 - self.tau)*target_network_param.data
-                        )
+                    obs = _next_obs
+                    total_reward = total_reward + rewards
+
+                    if terminated:
+                        episode += 1
+                        episode_length.append(ep_length)
+                        episode_reward.append(total_reward)
+                        break
+                
+                if epoch % 5000 == 0:
+                    wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(epoch/5000))
+                    wandb_run.log({"Average Episode Length" : np.mean(episode_length)}, step = int(epoch/5000))
+                    episode_reward = []
+                    episode_length = []
+                    
+                if step > self.step_start_learning :
+                    if epoch % self.training_frequency == 0:
+                        data = self.replay_buffer.sample(self.batch_size)
+                        with torch.no_grad():
+                            target_output = self.target_network(data.next_observations)
+                            target_max, _ = self.target_network(data.next_observations).max(dim=2)
+                            td_target = data.rewards.flatten() + self.gamma * target_max * (1 - data.dones.flatten())
+
+                        current_value = self.q_network(data.observations).squeeze(0)
+                        current_value = current_value.gather(1, data.actions).squeeze().unsqueeze(0)
+                        loss = torch.nn.functional.mse_loss(td_target, current_value)
+
+                        self.optimizer.zero_grad()
+                        loss.backward()
+                        self.optimizer.step()
+
+                    if epoch % self.target_network_frequency == 0:
+                        for target_network_param, q_network_param in zip(self.target_network.parameters(), self.q_network.parameters()):
+                            target_network_param.data.copy_(
+                                self.tau * q_network_param.data + (1.0 - self.tau)*target_network_param.data
+                            )
         
-        self.save_buffer(self.seed)
+        self.save_buffer()
         
         # self.replay_buffer = self.load_buffer()
 
             
-    def save_buffer(self, seed):
+    def save_buffer(self):
  
-        file_path =  f"offline_data/offline_data_{seed}"
+        file_path =  f"offline_data/offline_data"
         save_to_pkl(file_path, self.replay_buffer)
 
     def load_buffer(self):
 
-        file_path = "offline_data/offline_data1"
+        file_path = "offline_data/offline_data"
         replay_buffer = load_from_pkl(file_path)
         return replay_buffer
 
@@ -226,7 +227,7 @@ if __name__ == "__main__":
     Create the wandb run
     """
 
-    project_name = "DQN"
+    project_name = "DQN_Dataset"
     sweep_id = wandb.sweep(sweep=config_dict, project=project_name)
     agent = wandb.agent(sweep_id, function=run_exp, count=5)
 
