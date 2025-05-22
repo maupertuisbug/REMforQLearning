@@ -110,6 +110,14 @@ class DQNAgent:
             optimize_memory_usage = True, 
             handle_timeout_termination = False
         )
+        self.replay_buffer_smaller = ReplayBuffer(
+            self.buffer_size, 
+            self.envs.single_observation_space, 
+            self.envs.single_action_space, 
+            self.device, 
+            optimize_memory_usage = True, 
+            handle_timeout_termination = False
+        )
     
     def train(self, wandb_run):
 
@@ -143,6 +151,9 @@ class DQNAgent:
                             _next_obs[idx] = info["final_observation"][idx]
                 
                     self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
+
+                    if epoch > 500000:
+                        self.replay_buffer_smaller.add(obs, _next_obs, actions, rewards, terminated, info)
 
                     obs = _next_obs
                     total_reward = total_reward + rewards
@@ -188,8 +199,8 @@ class DQNAgent:
             
     def save_buffer(self):
  
-        file_path =  f"offline_data/offline_data"
-        save_to_pkl(file_path, self.replay_buffer)
+        file_path =  f"offline_data/offline_data_smaller"
+        save_to_pkl(file_path, self.replay_buffer_smaller)
 
     def load_buffer(self):
 
