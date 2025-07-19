@@ -121,7 +121,7 @@ class DQNAgent:
     
     def train(self, wandb_run):
 
-        for seed in [34, 43, 56, 78]:
+        for seed in [78]:
             obs, _ = self.envs.reset(seed=seed)
             total_reward = 0
             episode_reward = []
@@ -152,7 +152,7 @@ class DQNAgent:
                 
                     self.replay_buffer.add(obs, _next_obs, actions, rewards, terminated, info)
 
-                    if epoch > 500000:
+                    if epoch > 50000:
                         self.replay_buffer_smaller.add(obs, _next_obs, actions, rewards, terminated, info)
 
                     obs = _next_obs
