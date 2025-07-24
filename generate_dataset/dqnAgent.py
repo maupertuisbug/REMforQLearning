@@ -121,7 +121,7 @@ class DQNAgent:
     
     def train(self, wandb_run):
 
-        for seed in [78]:
+        for seed in [45]:
             obs, _ = self.envs.reset(seed=seed)
             total_reward = 0
             episode_reward = []

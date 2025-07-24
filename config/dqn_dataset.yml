@@ -6,7 +6,7 @@ parameters :
   gamma:
     values : [0.99]
   epochs :
-    values : [100000]
+    values : [2000000]
   env_id:
     values : ["BreakoutNoFrameskip-v4"]
   capture_video :
