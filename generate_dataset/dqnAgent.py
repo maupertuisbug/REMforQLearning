@@ -164,9 +164,9 @@ class DQNAgent:
                         episode_reward.append(total_reward)
                         break
                 
-                if epoch % 5000 == 0:
-                    wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(epoch/5000))
-                    wandb_run.log({"Average Episode Length" : np.mean(episode_length)}, step = int(epoch/5000))
+                if epoch % 10000 == 0:
+                    wandb_run.log({"Average Episode Reward" : np.mean(episode_reward)}, step = int(epoch/10000))
+                    wandb_run.log({"Average Episode Length" : np.mean(episode_length)}, step = int(epoch/10000))
                     episode_reward = []
                     episode_length = []
                     

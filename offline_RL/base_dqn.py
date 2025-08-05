@@ -81,7 +81,7 @@ class BaseAgent :
         self.tau = config.tau 
         self.epochs = config.epochs
         self.evaluation_epochs = config.evaluation_epochs
-        self.target_network_frequency = config.target_network_frequency 
+        self.sync_freq = config.target_network_frequency 
         self.k = config.k
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.wandb_run = wandb_run
@@ -99,7 +99,7 @@ class BaseAgent :
         self.target_networks = []
         self.optimizers = []
 
-        for k in range(self.k):
+        for k in range(0, self.k):
             self.q_networks.append(QNetwork(self.envs).to(self.device))
             self.target_networks.append(QNetwork(self.envs).to(self.device))
             self.optimizers.append(optim.Adam(self.q_networks[-1].parameters(), lr=self.learning_rate))
@@ -116,7 +116,7 @@ class BaseAgent :
             handle_timeout_termination = False
         )
 
-        file_path = "offline_data/offline_data"
+        file_path = "offline_data/offline_data_smaller.pkl"
         self.replay_buffer = load_from_pkl(file_path)
 
     

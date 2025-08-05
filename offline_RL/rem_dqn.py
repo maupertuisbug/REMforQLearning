@@ -1,7 +1,8 @@
 from offline_RL.base_dqn import BaseAgent
-
-
-
+import numpy as np
+import torch 
+from utils.util import make_env, epsilon_schedule
+import random
 
 
 
@@ -22,16 +23,17 @@ class REMAgent(BaseAgent):
             current_value = 0 
             for k in range(self.k):
 
-                q_network = self.q_network[k]
-                target_network  = self.target_network[k]
+                q_network = self.q_networks[k]
+                target_network  = self.target_networks[k]
 
                 target_output = q_network(data.next_observations)
                 target_max, _ = target_network(data.next_observations).max(dim=2)
-                td_target = td_target + data.rewards.flatten() + probabilities[k] * (self.gamma * target_max * (1- data.dones.flatten()))
+                td_target =      td_target  + probabilities[k] * (self.gamma * target_max * (1- data.dones.flatten()))
 
                 current_value_ = q_network(data.observations).squeeze(0)
                 current_value  = current_value + probabilities[k] * (current_value_.gather(1, data.actions).squeeze().unsqueeze(0))
 
+            td_target = td_target + data.rewards.flatten()
             loss = torch.nn.functional.mse_loss(td_target, current_value)
 
             for k in range(self.k):
@@ -41,6 +43,8 @@ class REMAgent(BaseAgent):
 
             for k in range(self.k):
                 self.optimizers[k].step()
+            
+            self.wandb_run.log({"train/loss" : loss.item(), "train/step" : epoch})
 
             if epoch % self.target_network_frequency == 0:
 
@@ -61,8 +65,10 @@ class REMAgent(BaseAgent):
             total_reward = 0 
             obs, _ = self.envs.reset(seed=self.seed)
             ep_length = 0 
-
-            while True :
+            episode_reward = [] 
+            episode_length = [] 
+            done = False
+            while not done:
                 step = step + 1 
                 ep_length = ep_length + 1
                 epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction * self.total_timesteps, step)
@@ -73,27 +79,25 @@ class REMAgent(BaseAgent):
                     q_values = 0 
                     for k in range(self.k):
                         q_network = self.q_network[k]
-                        q_values_ = q_network(torch.tensor(obs, device = self.device)).squeeze(0)
-                        e_values =  q_values + probabilities[k] * q_values_
+                        q_values = q_network(torch.tensor(obs, device = self.device)).squeeze(0)
+                        q_values_ =  q_values + probabilities[k] * q_values
                     
-                    actions = torch.argmax(q_values, dim=1).cpu().numpy()
+                    actions = torch.argmax(q_values_, dim=1).cpu().numpy()
                 
-                next_obs, rewards, terminated, truncated, info = self.envs.step(actions)
+                next_obs, rewards, done, truncated, info = self.envs.step(actions)
                 _next_obs = next_obs.copy()
                 obs = _next_obs
                 total_reward = total_reward + rewards 
 
-                if terminated :
+                if done :
                     episode += 1 
                     episode_length.append(ep_length)
                     episode_reward.append(total_reward)
                     break 
             
             if epoch % 100 == 0 :
-                self.wandb_run.log({"Average Episode Reward " : np.mean(episode_reward)}, step = int(epoch/100))
-                self.wandb_run.log({"Average Episode Length " : np.mean(episode_length)}, step = int(epoch/100))
-                episode_reward = []
-                episode_length = []
+                self.wandb_run.log({"eval/reward" : np.mean(episode_reward), "eval/step" : int(epoch/100)})
+                self.wandb_run.log({"eval/epl" : np.mean(episode_length), "eval/step" : int(epoch/100)})
 
 
 
