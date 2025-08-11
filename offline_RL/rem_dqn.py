@@ -21,32 +21,27 @@ class REMAgent(BaseAgent):
             probabilities = np.random.dirichlet(alpha=np.ones(self.k), size=1)[0]
             td_target = 0 
             current_value = 0 
+            losses = [0]
             for k in range(self.k):
 
                 q_network = self.q_networks[k]
-                target_network  = self.target_networks[k]
+                target_network = self.target_networks[k]
 
                 target_output = q_network(data.next_observations)
                 target_max, _ = target_network(data.next_observations).max(dim=2)
-                td_target =      td_target  + probabilities[k] * (self.gamma * target_max * (1- data.dones.flatten()))
-
+                td_target     = data.rewards.flatten() + (self.gamma * target_max * (1 - data.dones.flatten()))
                 current_value_ = q_network(data.observations).squeeze(0)
-                current_value  = current_value + probabilities[k] * (current_value_.gather(1, data.actions).squeeze().unsqueeze(0))
-
-            td_target = td_target + data.rewards.flatten()
-            loss = torch.nn.functional.mse_loss(td_target, current_value)
-
-            for k in range(self.k):
+                current_value  = (current_value_.gather(1, data.actions).squeeze().unsqueeze(0))
+                
+                loss = torch.nn.functional.mse_loss(current_value, td_target)
+                losses.append(loss.item())
                 self.optimizers[k].zero_grad()
-
-            loss.backward()
-
-            for k in range(self.k):
+                loss.backward()
                 self.optimizers[k].step()
             
-            self.wandb_run.log({"train/loss" : loss.item(), "train/step" : epoch})
+            self.wandb_run.log({"train/loss" :  np.mean(losses), "train/step" : epoch})
 
-            if epoch % self.target_network_frequency == 0:
+            if epoch % self.sync_freq == 0:
 
                 for k in range(self.k):
                     for target_network_param, q_network_param in zip(self.target_networks[k].parameters(), self.q_networks[k].parameters()):
@@ -71,14 +66,14 @@ class REMAgent(BaseAgent):
             while not done:
                 step = step + 1 
                 ep_length = ep_length + 1
-                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction * self.total_timesteps, step)
+                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.total_timesteps, step)
                 probabilities = np.random.dirichlet(alpha=np.ones(self.k), size=1)[0]
                 if random.random() < epsilon :
                     actions = self.envs.action_space.sample()
                 else : 
                     q_values = 0 
                     for k in range(self.k):
-                        q_network = self.q_network[k]
+                        q_network = self.q_networks[k]
                         q_values = q_network(torch.tensor(obs, device = self.device)).squeeze(0)
                         q_values_ =  q_values + probabilities[k] * q_values
                     

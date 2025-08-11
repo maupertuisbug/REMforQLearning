@@ -32,6 +32,7 @@ class EnsembleAgent(BaseAgent):
             data = self.replay_buffer.sample(self.batch_size)
             td_target = 0 
             current_value = 0 
+            losses = [0]
             for k in range(self.k):
 
                 q_network = self.q_networks[k]
@@ -39,27 +40,18 @@ class EnsembleAgent(BaseAgent):
 
                 target_output = q_network(data.next_observations)
                 target_max, _ = target_network(data.next_observations).max(dim=2)
-                td_target     = td_target +  (self.gamma * target_max * (1 - data.dones.flatten()))
-
+                td_target     = data.rewards.flatten() + (self.gamma * target_max * (1 - data.dones.flatten()))
                 current_value_ = q_network(data.observations).squeeze(0)
-                current_value  = current_value + (current_value_.gather(1, data.actions).squeeze().unsqueeze(0))
-           
-            td_target = td_target/self.k
-            td_target  = td_target + data.rewards.flatten() 
-            current_value = current_value/self.k
-            loss = torch.nn.functional.mse_loss(current_value, td_target)
-
-            for k in range(0, self.k):
+                current_value  = (current_value_.gather(1, data.actions).squeeze().unsqueeze(0))
+                
+                loss = torch.nn.functional.mse_loss(current_value, td_target)
+                losses.append(loss.item())
                 self.optimizers[k].zero_grad()
-            
-            loss.backward()
-
-            for k in range(0, self.k):
+                loss.backward()
                 self.optimizers[k].step()
 
-            self.wandb_run.log({"train/loss" : loss.item(), "train/step" : epoch})
+            self.wandb_run.log({"train/loss" : np.mean(losses), "train/step" : epoch})
 
-            
             if epoch % self.sync_freq == 0 :
 
                 for k in range(0, self.k):
@@ -89,7 +81,7 @@ class EnsembleAgent(BaseAgent):
             while not done :
                 step = step + 1
                 ep_length = ep_length + 1
-                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.exploration_fraction * self.evaluation_epochs, step)
+                epsilon = epsilon_schedule(self.epsilon_a, self.epsilon_b, self.evaluation_epochs, step)
                 if random.random() < epsilon :
                     actions = self.envs.action_space.sample()
                 else :

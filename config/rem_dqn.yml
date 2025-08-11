@@ -20,13 +20,13 @@ parameters :
   tau :
     values : [0.9]
   k :
-    values : [3]
+    values : [4]
   epochs :
-    values : [400000]
+    values : [500000]
   evaluation_epochs :
     values : [50000]
   target_network_frequency :
-    values : [1000]
+    values : [5000]
   batch_size :
     values : [128]
   epsilon_a :
@@ -34,7 +34,7 @@ parameters :
   epsilon_b :
     values : [0.01]
   exploration_fraction :
-    values : [0.10]
+    values : [1.0]
   step_start_learning :
     values : [100]
   training_frequency :

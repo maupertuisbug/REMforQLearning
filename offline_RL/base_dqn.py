@@ -98,11 +98,12 @@ class BaseAgent :
         self.q_networks = [] 
         self.target_networks = []
         self.optimizers = []
-
         for k in range(0, self.k):
             self.q_networks.append(QNetwork(self.envs).to(self.device))
             self.target_networks.append(QNetwork(self.envs).to(self.device))
-            self.optimizers.append(optim.Adam(self.q_networks[-1].parameters(), lr=self.learning_rate))
+        
+        for k in range(0, self.k):
+            self.optimizers.append(optim.Adam(self.q_networks[k].parameters(), lr=self.learning_rate))
 
         ac = self.envs.single_action_space.n 
 

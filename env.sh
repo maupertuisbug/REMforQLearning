@@ -12,3 +12,4 @@ export PYTHONPATH=$PWD
 # ln -s x86_64-conda_cos7-linux-gnu-gcc gcc
 # source anaconda3/etc/profile.d/conda.sh
 # nohup python generate_dataset/dqnAgent.py -config config/dqn_dataset.yml  > output.log 2>&1 &
+# nohup python exp_ensemble_dqn.py -config config/rem_dqn.yml  > output.log 2>&1 &
